@@ -27,7 +27,7 @@ if not all([GOOGLE_API_KEY, TWILIO_AUTH_TOKEN, TWILIO_ACCOUNT_SID]):
     exit()
 
 # --- 2. Set up the LLM and RAG Knowledge Base with FAISS ---
-llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', temperature=0.2, api_key=GOOGLE_API_KEY)
+llm = ChatGoogleGenerativeAI(model='gemini/gemini-1.5-flash', temperature=0.2, api_key=GOOGLE_API_KEY)
 
 dental_clinic_info = """
 Clinic Name: Smile Center Dental Clinic

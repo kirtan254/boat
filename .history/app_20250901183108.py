@@ -177,7 +177,7 @@ def whatsapp_webhook():
             crew = Crew(
                 agents=[booking_agent],
                 tasks=[booking_task],
-                verbose=True,
+                verbose=2,
                 process=Process.sequential
             )
             result = crew.kickoff(inputs={'user_request': incoming_msg})
@@ -187,7 +187,7 @@ def whatsapp_webhook():
             crew = Crew(
                 agents=[support_agent],
                 tasks=[support_task],
-                verbose=True,
+                verbose=2,
                 process=Process.sequential
             )
             result = crew.kickoff(inputs={'user_request': incoming_msg})
