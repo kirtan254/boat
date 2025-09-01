@@ -47,6 +47,7 @@ retriever = docsearch.as_retriever()
 rag_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever)
 
 # --- 3. Define Custom Tools for CrewAI ---
+
 # Helper function to create a CrewAI-compatible tool from a LangChain StructuredTool
 def create_crewai_tool_from_langchain_tool(langchain_tool):
     class CustomTool(BaseTool):
@@ -112,7 +113,7 @@ support_agent = Agent(
     role='Dental Clinic Support Assistant',
     goal='Provide accurate and helpful information about the dental clinic.',
     backstory='You are a knowledgeable and polite assistant who provides information about the clinic.',
-    tools=[info_retriever_tool],
+    tools=[info_retriever_tool],  # Use the wrapped tool here
     verbose=True,
     allow_delegation=False,
     llm=llm
@@ -140,11 +141,10 @@ validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
 @app.route("/whatsapp", methods=['POST'])
 def whatsapp_webhook():
-    # Retrieve the signature from the headers
     signature = request.headers.get('X-Twilio-Signature')
+    post_body = request.get_data(as_text=True)
     
-    # Use request.form which is a MultiDict object, ideal for the validator
-    if not validator.validate(request.url, request.form, signature):
+    if not validator.validate(request.url, post_body, signature):
         logging.warning("Invalid Twilio signature. Request rejected.")
         return "Invalid signature", 403
 
@@ -155,7 +155,6 @@ def whatsapp_webhook():
     msg = resp.message()
 
     try:
-        # Intent Classification using the LLM
         intent_prompt = f"""
         Classify the user's intent based on the following message. 
         Respond with only the classification word.

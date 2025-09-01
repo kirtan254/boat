@@ -3,32 +3,35 @@ from flask import Flask, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.request_validator import RequestValidator
 from langchain.text_splitter import CharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 from langchain_core.tools import tool
 import logging
-from dotenv import load_dotenv
 
-load_dotenv()
 # CrewAI imports
 from crewai import Agent, Task, Crew, Process
+# Corrected import path for BaseTool, this should resolve the ModuleNotFoundError
+# from crewai_tools.tools.base_tool import BaseTool 
 from crewai.tools import BaseTool
 
 # --- 1. Set up Logging and Environment Variables ---
+# Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
-TWILIO_AUTH_TOKEN = os.environ.get('AUTH_TOKEN')
-TWILIO_ACCOUNT_SID = os.environ.get('ACCOUNT_SID')
+# Load API keys from environment variables
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
 
-if not all([GOOGLE_API_KEY, TWILIO_AUTH_TOKEN, TWILIO_ACCOUNT_SID]):
-    logging.error("Missing required environment variables. Please set GOOGLE_API_KEY, AUTH_TOKEN, and ACCOUNT_SID.")
+if not all([OPENAI_API_KEY, TWILIO_AUTH_TOKEN, TWILIO_ACCOUNT_SID]):
+    logging.error("Missing required environment variables. Please set OPENAI_API_KEY, TWILIO_AUTH_TOKEN, and TWILIO_ACCOUNT_SID.")
     exit()
 
 # --- 2. Set up the LLM and RAG Knowledge Base with FAISS ---
-llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', temperature=0.2, api_key=GOOGLE_API_KEY)
+llm = ChatOpenAI(model='gpt-4o', temperature=0.2, api_key=OPENAI_API_KEY)
 
+# Create the knowledge base for the RAG bot
 dental_clinic_info = """
 Clinic Name: Smile Center Dental Clinic
 Location: 123 Main Street, Anytown, USA
@@ -40,23 +43,15 @@ Insurance: We accept all major dental insurance plans including Cigna, Delta Den
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 texts = text_splitter.split_text(dental_clinic_info)
 
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", api_key=GOOGLE_API_KEY)
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
 
+# Create the FAISS vector store instead of Chroma
 docsearch = FAISS.from_texts(texts, embeddings)
 retriever = docsearch.as_retriever()
 rag_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever)
 
 # --- 3. Define Custom Tools for CrewAI ---
-# Helper function to create a CrewAI-compatible tool from a LangChain StructuredTool
-def create_crewai_tool_from_langchain_tool(langchain_tool):
-    class CustomTool(BaseTool):
-        name: str = langchain_tool.name
-        description: str = langchain_tool.description
-
-        def _run(self, *args, **kwargs):
-            return langchain_tool.run(*args, **kwargs)
-    return CustomTool()
-
+# This tool now wraps the LangChain RAG chain, making it accessible to a CrewAI agent
 @tool("Information Retriever")
 def information_retriever(query: str) -> str:
     """
@@ -92,8 +87,6 @@ class AppointmentBookingTool(BaseTool):
 # Instantiate the tools
 calendar_tool = CalendarCheckTool()
 booking_tool = AppointmentBookingTool()
-# Create a CrewAI-compatible version of the Information Retriever tool
-info_retriever_tool = create_crewai_tool_from_langchain_tool(information_retriever)
 
 # --- 4. Define the CrewAI Agents and Tasks ---
 # The Appointment Agent
@@ -112,7 +105,7 @@ support_agent = Agent(
     role='Dental Clinic Support Assistant',
     goal='Provide accurate and helpful information about the dental clinic.',
     backstory='You are a knowledgeable and polite assistant who provides information about the clinic.',
-    tools=[info_retriever_tool],
+    tools=[information_retriever],
     verbose=True,
     allow_delegation=False,
     llm=llm
@@ -140,11 +133,11 @@ validator = RequestValidator(TWILIO_AUTH_TOKEN)
 
 @app.route("/whatsapp", methods=['POST'])
 def whatsapp_webhook():
-    # Retrieve the signature from the headers
+    # Validate the Twilio request signature
     signature = request.headers.get('X-Twilio-Signature')
+    post_body = request.get_data(as_text=True)
     
-    # Use request.form which is a MultiDict object, ideal for the validator
-    if not validator.validate(request.url, request.form, signature):
+    if not validator.validate(request.url, post_body, signature):
         logging.warning("Invalid Twilio signature. Request rejected.")
         return "Invalid signature", 403
 
